@@ -1,2 +1,6 @@
 ### Python ###
 __pycache__/
+
+### csv files ###
+# Processed data
+data/processed/
