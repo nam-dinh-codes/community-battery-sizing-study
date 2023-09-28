@@ -51,7 +51,7 @@ class DataPreparation:
         return df_pd_price
 
 
-class _OptimisationParameters:
+class OptimisationParameters:
     def __init__(self, df_prosumer, df_price):
         self.df_prosumer = df_prosumer
         self.df_price = df_price
@@ -146,13 +146,12 @@ class _OptimisationParameters:
         return spot_price, reference_price
     
 
-class ProsumerModel:
-    def __init__(self, df_prosumer, df_price):
+class _ProsumerModel:
+    def __init__(self, prosumer_list):
         """
         Initialize the Model Building class.
         """
-        self.parameter_handler = _OptimisationParameters(df_prosumer, df_price)
-        self.prosumer_list = self.parameter_handler.prosumer_list
+        self.prosumer_list = prosumer_list
         self.model = None
         self.m_var = None
 
@@ -284,7 +283,8 @@ class ProsumerModel:
         
         self.model.setObjective(comfort_value - energy_cost - network_usage_cost + solar_storing_incentive, gp.GRB.MAXIMIZE)
 
-    def optimise_model(self, rolling_th, previous_consumption_deviation, initial_cumulative_solar_credit):
+    def optimise_model(self, prosumer_spec, spot_price, piecewise_dict, 
+                       previous_consumption_deviation, initial_cumulative_solar_credit):
         """
         Optimize the rebound effect for the given rolling horizon.
 
@@ -293,11 +293,6 @@ class ProsumerModel:
             previous_consumption_deviation (list): A list of previous consumption deviation for all prosumers.
             initial_cumulative_solar_credit (list): A list of initial cumulative credit usage for all prosumers.
         """
-
-        ### Get constant values
-        prosumer_spec = self.parameter_handler.get_prosumer_spec(rolling_th)
-        spot_price, reference_price = self.parameter_handler.get_price_spec(rolling_th)
-        piecewise_dict = self.parameter_handler.prosumer_comfort_piecewise(prosumer_spec, reference_price)
         
         if previous_consumption_deviation is None:
             previous_consumption_deviation = np.zeros(len(self.prosumer_list))
@@ -345,7 +340,7 @@ class ProsumerModel:
         
         return data_dict
     
-    def compile_optimised_data(self, rolling_th):
+    def compile_optimised_data(self, rolling_th, df_prosumer_original):
         """
         Generate and process the data from the optimization model.
 
@@ -362,7 +357,7 @@ class ProsumerModel:
         }
 
         # Add timeline for these rolling dataframes
-        time_range = self.parameter_handler.df_prosumer.iloc[rolling_th: rolling_th + len(OPTIMISATION_HORIZON)]["time"].values
+        time_range = df_prosumer_original.iloc[rolling_th: rolling_th + len(OPTIMISATION_HORIZON)]["time"].values
         for df_ in dataframes_dict.values():
             df_['time'] = time_range
         
@@ -379,7 +374,7 @@ class ProsumerModel:
             df_optimised_data = df_optimised_data.merge(dataframes_dict[key], on=['time', 'dataid'])
 
         # Merge with solar
-        df_solar_temp = self.parameter_handler.df_prosumer[['time', 'solar']].copy()
+        df_solar_temp = df_prosumer_original[['time', 'solar']].copy()
         df_solar_temp = df_solar_temp.reset_index()
         temp_dataid = df_solar_temp['dataid'].values
         temp_dataid = [f'prosumer_{str(i)}' for i in temp_dataid]
@@ -391,18 +386,11 @@ class ProsumerModel:
 
 class ProsumerRho:
 
-    def __init__(self, prosumer_model):
-        self.prosumer_model = prosumer_model
-        self.prosumer_list = prosumer_model.prosumer_list
+    def __init__(self, parameter_handler):
+        self.parameter_handler = parameter_handler
+        self.prosumer_list = parameter_handler.prosumer_list
+        self.prosumer_model = _ProsumerModel(self.prosumer_list)
         self.dfs_rolling_data = None
-        self.dfs_agg_rolling = None
-    
-    def _get_spot_price(self, rolling_th):
-        """
-        Get the spot price and the reference price in the current rolling horizon.
-        """
-        spot_price,_ = self.prosumer_model.parameter_handler.get_price_spec(rolling_th)
-        return spot_price
 
     def rolling_optimisation(self, n_receding_horizons):
         """
@@ -418,25 +406,30 @@ class ProsumerRho:
         for interval in range(n_receding_horizons):
             print('INTERVAL:', interval)
             
+            ### Get constant values
+            prosumer_spec = self.parameter_handler.get_prosumer_spec(interval)
+            spot_price, reference_price = self.parameter_handler.get_price_spec(interval)
+            piecewise_dict = self.parameter_handler.prosumer_comfort_piecewise(prosumer_spec, reference_price)
+
             if interval == 0:
-                model = self.prosumer_model.optimise_model(rolling_th=interval, previous_consumption_deviation=None, 
+                model = self.prosumer_model.optimise_model(prosumer_spec, spot_price, piecewise_dict, 
+                                                           previous_consumption_deviation=None, 
                                                            initial_cumulative_solar_credit=None)
             else:
-                model = self.prosumer_model.optimise_model(rolling_th=interval, previous_consumption_deviation=prosumers_consumption_deviation, 
+                model = self.prosumer_model.optimise_model(prosumer_spec, spot_price, piecewise_dict, 
+                                                           previous_consumption_deviation=prosumers_consumption_deviation, 
                                                            initial_cumulative_solar_credit=prosumers_cumulative_solar_credit)
                     
             prosumers_consumption_deviation = [v.x for v in model.getVars() if 'consumption_deviation' in v.varName]
             prosumers_cumulative_solar_credit = [model.getVarByName('cumulative_solar_credit[{},0]'.format(i)).x 
                                                  for i in self.prosumer_list]
             
-            df_optimised_data = self.prosumer_model.compile_optimised_data(rolling_th=interval)
+            df_optimised_data = self.prosumer_model.compile_optimised_data(rolling_th=interval, 
+                                                                           df_prosumer_original=self.parameter_handler.df_prosumer)
 
-            spot_price = self._get_spot_price(rolling_th=interval)
             df_optimised_data['pd_price'] = np.tile(spot_price.values, len(self.prosumer_list))
 
             self.dfs_rolling_data.append(df_optimised_data)
-            
-        return self.dfs_rolling_data
     
     # Save the optimised data to csv files
     def save_rolling_data(self, folder_name):
@@ -449,16 +442,24 @@ class ProsumerRho:
             # Save without index
             df_optimised_data.to_csv(f'{folder_name}/interval_{interval}_pd_price.csv', index=False)
 
-    def compile_aggregate_data(self, rolling_data_folder=None):
-        if self.dfs_rolling_data is None or rolling_data_folder is not None:
-            def read_csv_file(csv_file):
-                df = pd.read_csv(csv_file, low_memory=False, float_precision='round_trip', index_col='dataid')
-                df['time'] = pd.to_datetime(df['time'])
-                # Drop nan values if any
-                df = df.dropna()
-                return df
-            self.dfs_rolling_data = [read_csv_file(f'{rolling_data_folder}/interval_{interval}_pd_price.csv') 
-                                     for interval in range(len((glob.glob(f'{rolling_data_folder}/*.csv'))))]
+
+class ProcessOptimisedData:
+    def __init__(self):
+        self.dfs_agg_rolling = None
+
+    @staticmethod
+    def read_csv_file(csv_file, index_col):
+        df = pd.read_csv(csv_file, low_memory=False, float_precision='round_trip')
+        df['time'] = pd.to_datetime(df['time'])
+        df = df.set_index(index_col)
+        # Drop nan values if any
+        df = df.dropna()
+        return df
+
+    def compile_aggregate_data(self, rolling_data_folder):
+
+        self.dfs_rolling_data = [self.read_csv_file(f'{rolling_data_folder}/interval_{interval}_pd_price.csv', index_col='dataid') 
+                                 for interval in range(len((glob.glob(f'{rolling_data_folder}/*.csv'))))]
 
         group_sum = ['consumption', 'solar', 'credit_usage', 'cumulative_solar_credit', 
                      'net_positive', 'import_energy', 'export_energy', 'used_solar']
@@ -476,3 +477,19 @@ class ProsumerRho:
             os.makedirs(folder_name)
         for interval, df_agg_optimised in enumerate(self.dfs_agg_rolling):
             df_agg_optimised.to_csv(f'{folder_name}/aggregate_interval_{interval}_pd_price.csv')
+
+    def get_lookahead_values(self, agg_folder_name, lookahead_interval):
+        if self.dfs_agg_rolling is None:
+            self.dfs_agg_rolling = [self.read_csv_file(f'{agg_folder_name}/aggregate_interval_{interval}_pd_price.csv', index_col='time')
+                                    for interval in range(len((glob.glob(f'{agg_folder_name}/*.csv'))))]
+        lookahead_values = []
+        for df_agg_optimised in self.dfs_agg_rolling:
+            lookahead_values.append(df_agg_optimised.iloc[lookahead_interval])
+        df_lookahead = pd.concat(lookahead_values, axis=1).T
+        # Set index name to 'time'
+        df_lookahead.index.name = 'time'
+        return df_lookahead
+    
+    def save_lookahead_data(self, dfs_lookahead, lookahead_interval, folder_name):
+        df_lookahead = pd.concat(dfs_lookahead)
+        df_lookahead.to_csv(f'{folder_name}/aggregate_{lookahead_interval}_lookahead_pd_price.csv')
