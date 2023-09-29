@@ -36,7 +36,7 @@ class DataPreparation():
         df_prosumer_agg_rho = pd.concat(dfs_monthly_prosumer_agg)
         return df_prosumer_agg_rho
 
-class _OptimisationParameters:
+class OptimisationParameters:
     def __init__(self, df_prosumer_agg_rho, battery_capacity):
         self.df_prosumer_agg_rho = df_prosumer_agg_rho
         self.battery_capacity = battery_capacity
@@ -68,7 +68,7 @@ class _OptimisationParameters:
         Output a dictionary
         """
         df_aggregate = self._extract_rolling_aggregate(rolling_th)
-        columns_of_interest = ['net_positive', 'export_energy', 'import_energy']
+        columns_of_interest = ['run_time', 'net_positive', 'export_energy', 'import_energy']
 
         prosumer_spec = {}
         for column in columns_of_interest:
@@ -90,10 +90,8 @@ class _OptimisationParameters:
         
         return fee_information
 
-class BatteryModel():
-    def __init__(self, df_prosumer_agg_rho, battery_capacity):
-
-        self.parameter_handler = _OptimisationParameters(df_prosumer_agg_rho, battery_capacity)
+class _BatteryModel():
+    def __init__(self):
         self.model = None
         self.m_var = None
     
@@ -187,12 +185,8 @@ class BatteryModel():
         # Set the objective function to maximize the total profit
         self.model.setObjective(energy_cost + dnsp_cost + battery_opex + peak_demand_cost, gp.GRB.MINIMIZE)
     
-    def optimise_model(self, rolling_th, initial_SOC, current_max_net_energy):
-    
-        ### Get constant values
-        battery_spec = self.parameter_handler.get_battery_spec()
-        prosumer_spec = self.parameter_handler.get_prosumer_spec(rolling_th)
-        fee_information = self.parameter_handler.get_price_spec(rolling_th)
+    def optimise_model(self, battery_spec, prosumer_spec, fee_information, 
+                       initial_SOC, current_max_net_energy):
         
         ### Model declaration
         self.model = gp.Model('BatteryRho')
@@ -213,20 +207,17 @@ class BatteryModel():
         return self.model
 
 class BatteryRho:
-    def __init__(self, battery_model):
-        self.battery_model = battery_model
+    def __init__(self, parameter_handler):
+        self.parameter_handler = parameter_handler
+        self.battery_model = _BatteryModel()
         self.batt_oper_dict = None
         self.df_battery_optimised = None
-
-    def _get_run_time(self, rolling_th):
-        df_aggregate = self.battery_model.parameter_handler._extract_rolling_aggregate(rolling_th)
-        return df_aggregate['run_time'].iloc[0]
     
-    def _compile_battery_optimised_data(self):
+    def _compile_battery_optimised_data(self, battery_spec):
         df_battery = pd.DataFrame(data=self.batt_oper_dict)
-        df_battery = df_battery.set_index('run_time')
+        df_battery = df_battery.set_index('time')
         df_battery.index = pd.to_datetime(df_battery.index)
-        df_battery['capacity'] = self.battery_model.parameter_handler.get_battery_spec()['capacity']
+        df_battery['capacity'] = battery_spec['capacity']
         return df_battery
 
     def rolling_optimisation(self, n_receding_horizons):
@@ -234,24 +225,31 @@ class BatteryRho:
                        'charging_energy_negative', 'community_net_positive', 
                        'community_net_negative', 'grid_charging_positive']
         self.batt_oper_dict = {var: [] for var in vars_to_get}
-        self.batt_oper_dict['run_time'] = []
+        self.batt_oper_dict['time'] = []
 
         for interval in range(n_receding_horizons):
             if interval % 500 == 0:
                 print('INTERVAL:', interval)
+
+            ### Get constant values
+            battery_spec = self.parameter_handler.get_battery_spec()
+            prosumer_spec = self.parameter_handler.get_prosumer_spec(interval)
+            fee_information = self.parameter_handler.get_price_spec(interval)
+
             initial_SOC = 0 if interval == 0 else self.batt_oper_dict['battery_energy'][-1]
             current_max_net = 0 if interval == 0 else np.max(self.batt_oper_dict['community_net_positive'])
-            model = self.battery_model.optimise_model(interval, initial_SOC=initial_SOC, current_max_net_energy=current_max_net)
+            model = self.battery_model.optimise_model(battery_spec, prosumer_spec, fee_information, 
+                                                      initial_SOC=initial_SOC, current_max_net_energy=current_max_net)
 
             # Get only the realised values which are the first values of the decision variables
-            self.batt_oper_dict['run_time'].append(self._get_run_time(interval))
+            self.batt_oper_dict['time'].append(prosumer_spec['run_time'][0])
             for var in vars_to_get:
                 self.batt_oper_dict[var].append(model.getVarByName(f'{var}[0]').x)
 
-        self.df_battery_optimised = self._compile_battery_optimised_data()
+        self.df_battery_optimised = self._compile_battery_optimised_data(battery_spec)
         return self.df_battery_optimised
     
-    def save_rolling_data(self, folder_name):
+    def save_committed_data(self, folder_name):
         if self.df_battery_optimised is None:
             raise ValueError('No data to save. Please run the rolling optimisation first.')
         # If folder does not exist, create it
