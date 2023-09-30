@@ -427,7 +427,7 @@ class ProsumerRho:
             df_optimised_data = self.prosumer_model.compile_optimised_data(rolling_th=interval, 
                                                                            df_prosumer_original=self.parameter_handler.df_prosumer)
 
-            df_optimised_data['pd_price'] = np.tile(spot_price.values, len(self.prosumer_list))
+            df_optimised_data['price'] = np.tile(spot_price.values, len(self.prosumer_list))
 
             self.dfs_rolling_data.append(df_optimised_data)
     
@@ -463,7 +463,7 @@ class ProcessOptimisedData:
 
         group_sum = ['consumption', 'solar', 'credit_usage', 'cumulative_solar_credit', 
                      'net_positive', 'import_energy', 'export_energy', 'used_solar']
-        group_mean = ['pd_price']
+        group_mean = ['price']
         agg_dict = {s: 'sum' for s in group_sum}
         agg_dict.update({m: 'mean' for m in group_mean})
         self.dfs_agg_rolling = [df_optimised_data.groupby('time').agg(agg_dict) for df_optimised_data in self.dfs_rolling_data]
