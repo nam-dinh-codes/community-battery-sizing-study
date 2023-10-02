@@ -51,7 +51,7 @@ class DataPreparation():
             return df_prosumer_agg_binding
         
 
-class BatteryWithoutRhoModel(BatteryModel):
+class BatteryWithoutRhModel(BatteryModel):
     def __init__(self, optimisation_horizon):
         super().__init__(optimisation_horizon)
 
@@ -78,8 +78,14 @@ class BatteryWithoutRhSizing:
     def __init__(self, parameter_handler, optimisation_horizon):
         self.parameter_handler = parameter_handler
         self.optimisation_horizon = optimisation_horizon
-        self.battery_model = BatteryWithoutRhoModel(optimisation_horizon)
+        self.battery_model = BatteryWithoutRhModel(optimisation_horizon)
         self.df_battery_optimised = None
+
+    def _compile_battery_optimised_data(self, batt_oper_dict):
+        df_battery = pd.DataFrame(data=batt_oper_dict)
+        df_battery = df_battery.set_index('time')
+        df_battery.index = pd.to_datetime(df_battery.index)
+        return df_battery
 
     def _get_optimisation_parameter(self):
         df_aggregate = self.parameter_handler.get_prosumer_agg_data(rolling_th='full')
@@ -93,7 +99,6 @@ class BatteryWithoutRhSizing:
                        'charging_energy_negative', 'community_net_positive', 
                        'community_net_negative', 'grid_charging_positive']
         batt_oper_dict = {var: [] for var in vars_to_get}
-        batt_oper_dict['time'] = []
 
         # Get constant values
         df_aggregate, battery_spec, prosumer_spec, fee_information = self._get_optimisation_parameter()
@@ -106,10 +111,7 @@ class BatteryWithoutRhSizing:
             batt_oper_dict[var] = [model.getVarByName(f'{var}[{t}]').x for t in self.optimisation_horizon]
         batt_oper_dict['capacity'] = model.getVarByName('battery_capacity').x
 
-        # Create pandas datafrmae from batt_oper_dict with time index
-        self.df_battery_optimised = pd.DataFrame(batt_oper_dict)
-        self.df_battery_optimised = self.df_battery_optimised.set_index('time')
-        self.df_battery_optimised.index = pd.to_datetime(self.df_battery_optimised.index)
+        self.df_battery_optimised = self._compile_battery_optimised_data(batt_oper_dict)
         return self.df_battery_optimised
     
     def save_binding_data(self, folder_name, price_type):

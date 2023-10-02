@@ -38,17 +38,12 @@ class BatteryRho():
     def __init__(self, parameter_handler, optimisation_horizon):
         self.parameter_handler = parameter_handler
         self.battery_model = BatteryModel(optimisation_horizon)
-        self.batt_oper_dict = None
         self.df_battery_optimised = None
     
-    def _compile_battery_optimised_data(self, battery_spec):
-        df_battery = pd.DataFrame(data=self.batt_oper_dict)
+    def _compile_battery_optimised_data(self, batt_oper_dict):
+        df_battery = pd.DataFrame(data=batt_oper_dict)
         df_battery = df_battery.set_index('time')
         df_battery.index = pd.to_datetime(df_battery.index)
-        # Ensure that the battery capacity is not None. If None, raise an error
-        if battery_spec['capacity'] is None:
-            raise ValueError('Battery capacity is not available')
-        df_battery['capacity'] = battery_spec['capacity']
         return df_battery
 
     def _get_optimisation_parameter(self, rolling_th):
@@ -62,8 +57,8 @@ class BatteryRho():
         vars_to_get = ['battery_energy', 'charging_energy', 'charging_energy_positive', 
                        'charging_energy_negative', 'community_net_positive', 
                        'community_net_negative', 'grid_charging_positive']
-        self.batt_oper_dict = {var: [] for var in vars_to_get}
-        self.batt_oper_dict['time'] = []
+        batt_oper_dict = {var: [] for var in vars_to_get}
+        batt_oper_dict['time'] = []
 
         for interval in range(n_receding_horizons):
             if interval % 500 == 0:
@@ -72,17 +67,18 @@ class BatteryRho():
             ### Get constant values
             df_aggregate, battery_spec, prosumer_spec, fee_information = self._get_optimisation_parameter(interval)
 
-            initial_SOC = 0 if interval == 0 else self.batt_oper_dict['battery_energy'][-1]
-            current_max_net = 0 if interval == 0 else np.max(self.batt_oper_dict['community_net_positive'])
+            initial_SOC = 0 if interval == 0 else batt_oper_dict['battery_energy'][-1]
+            current_max_net = 0 if interval == 0 else np.max(batt_oper_dict['community_net_positive'])
             model = self.battery_model.optimise_model(battery_spec, prosumer_spec, fee_information, 
                                                       initial_SOC=initial_SOC, current_max_net_energy=current_max_net)
 
             # Get only the realised values which are the first values of the decision variables
-            self.batt_oper_dict['time'].append(df_aggregate.index[0])
+            batt_oper_dict['time'].append(df_aggregate.index[0])
             for var in vars_to_get:
-                self.batt_oper_dict[var].append(model.getVarByName(f'{var}[0]').x)
+                batt_oper_dict[var].append(model.getVarByName(f'{var}[0]').x)
+        batt_oper_dict['capacity'] = model.getVarByName('battery_capacity').x
 
-        self.df_battery_optimised = self._compile_battery_optimised_data(battery_spec)
+        self.df_battery_optimised = self._compile_battery_optimised_data(batt_oper_dict)
         return self.df_battery_optimised
     
     def save_binding_data(self, folder_name):
@@ -91,6 +87,6 @@ class BatteryRho():
         # If folder does not exist, create it
         if not os.path.exists(folder_name):
             os.makedirs(folder_name)
-        capacity = self.df_battery_optimised['capacity'].iloc[0]
+        capacity = int(self.df_battery_optimised['capacity'].iloc[0])
         self.df_battery_optimised.to_csv(f'{folder_name}/battery_{capacity}_rho_model.csv')
         

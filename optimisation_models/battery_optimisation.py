@@ -48,7 +48,6 @@ class OptimisationParameters:
         """
         Get the list of spot price and the maximum price in the current rolling horizon.
         """
-        # Get the spot price and the maximum price in the current rolling horizon
         fee_information = dict()
         fee_information['spot_price'] = df_aggregate['price']
         fee_information['charging_fee'] = 0.032 # $/kWh
@@ -93,10 +92,11 @@ class BatteryModel():
 
         # Battery capacity
         self.m_var['battery_capacity'] = self.model.addVar(name='battery_capacity')
-
-
-    def _set_battery_constraint(self, initial_SOC, battery_spec):
-    
+        
+    def _set_battery_boundaries(self, battery_spec):
+        """
+        Set battery boundaries
+        """
         # Charging constraints
         charging_power = self.m_var['battery_capacity'] / battery_spec['duration']
         # Multiple by time resolution (0.5) representing half an hour
@@ -105,22 +105,25 @@ class BatteryModel():
         self.model.addConstrs(self.m_var['charging_energy'][t] >= -battery_spec['time_resolution'] * charging_power
                               for t in self.optimisation_horizon)
         # Complemetarity constraint for battery charging
-        self.model.addConstrs(self.m_var['charging_energy'][t] == self.m_var['charging_energy_positive'][t] - self.m_var['charging_energy_negative'][t] 
-                              for t in self.optimisation_horizon)
-        
-        # SOC determination
-        self.model.addConstrs(self.m_var['battery_energy'][t] == initial_SOC + 
-                              gp.quicksum(self.m_var['charging_energy_positive'][j] - self.m_var['charging_energy_negative'][j] / battery_spec['efficiency'] 
-                                          for j in range(t + 1)) for t in self.optimisation_horizon)
-
-        # Ending SOC of the receding horizon is equal the initial SOC
-        self.model.addConstr(self.m_var['battery_energy'][len(self.optimisation_horizon) - 1] == initial_SOC)
+        self.model.addConstrs(self.m_var['charging_energy'][t] == self.m_var['charging_energy_positive'][t] 
+                              - self.m_var['charging_energy_negative'][t] for t in self.optimisation_horizon)
         
         # Define bounbdaries for SOC
         self.model.addConstrs(self.m_var['battery_energy'][t] >= battery_spec['lower_SOC'] * self.m_var['battery_capacity']
                               for t in self.optimisation_horizon)
         self.model.addConstrs(self.m_var['battery_energy'][t] <= battery_spec['upper_SOC'] * self.m_var['battery_capacity']
                               for t in self.optimisation_horizon)
+        
+    def _set_battery_soc_evolution(self, initial_SOC, battery_spec):
+        
+        # SOC determination
+        self.model.addConstrs(self.m_var['battery_energy'][t] == initial_SOC + 
+                              gp.quicksum(self.m_var['charging_energy_positive'][j] 
+                                          - self.m_var['charging_energy_negative'][j] / battery_spec['efficiency'] 
+                                          for j in range(t + 1)) for t in self.optimisation_horizon)
+
+        # Ending SOC of the receding horizon is equal the initial SOC
+        self.model.addConstr(self.m_var['battery_energy'][len(self.optimisation_horizon) - 1] == initial_SOC)
     
     def _set_net_energy_constraint(self, prosumer_spec):
         big_M = 1000
@@ -138,7 +141,7 @@ class BatteryModel():
         self.model.addConstrs(self.m_var['charging_energy_positive'][t] - prosumer_spec['export_energy'][t] <=
                               self.m_var['grid_charging_positive'][t] for t in self.optimisation_horizon)
     
-    def _set_peak_demand_constraint(self, current_max_net_energy):
+    def _set_peak_demand_constraint(self, current_max_net_energy=0):
         # Define maximum net energy
         self.model.addConstrs(self.m_var['max_net_energy'] >= self.m_var['community_net_positive'][t] 
                               for t in self.optimisation_horizon)
@@ -166,16 +169,18 @@ class BatteryModel():
         self.model.setObjective(energy_cost + dnsp_cost + battery_opex + peak_demand_cost, gp.GRB.MINIMIZE)
     
     def optimise_model(self, battery_spec, prosumer_spec, fee_information, 
-                       initial_SOC, current_max_net_energy):
+                       initial_SOC, current_max_net_energy, verbose=0):
         
         ### Model declaration
         self.model = gp.Model('BatteryModel')
-        self.model.setParam('OutputFlag', 0)
+        self.model.setParam('OutputFlag', verbose)
+        self.model.setParam('TimeLimit', 700)
         
         ## Decision variables
         self._set_model_var()
         ## Constraints
-        self._set_battery_constraint(initial_SOC, battery_spec)
+        self._set_battery_boundaries(battery_spec)
+        self._set_battery_soc_evolution(initial_SOC, battery_spec)
         self._set_net_energy_constraint(prosumer_spec)
         self._set_peak_demand_constraint(current_max_net_energy)
         self._set_battery_capacity(battery_spec)
