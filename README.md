@@ -8,5 +8,9 @@ This is the repository for the CBS sizing comparison study taking into account r
 ### End-users model
 The end-users model is implemented in the `prosumer_rho_model.py` file and can be run using the `prosumer_rolling_operation.ipynb` file. The output from the model is the varying consumption behaviour over time.
 
+<img src="data/figures/end_user_rho.png" alt="End users RHO flowchart" width="600">
+
 ### CBS operation model
-The CBS operation model is implemented in the `battery_rho_model.py` file and can be run using the `battery_rolling_operation.ipynb` file. The model considers the dynamic consumption forecasts of residential users and the dynamic wholesale spot prices forecasts. The output from the model is the optimal CBS operation plan over time.
+The CBS operation model is implemented in the `battery_rho_model.py` file and can be run using the `battery_rolling_operation.ipynb` file. The model considers the dynamic consumption forecasts of residential users and the dynamic wholesale spot prices forecasts. The output from the model is the optimised CBS operation plan over time.
+
+<img src="data/figures/cbs_rho.png" alt="Battery RHO flowchart" width="600">
