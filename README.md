@@ -22,4 +22,4 @@ The global optimal battery capacity can be found by exhaustively searching for t
 A common battery sizing approach is to assume a perfect prediction of uncertain parameters and solve a planning problem over the entire sizing horizon. Additionally, to explore the impact of forecast prices, we replace the actual prices with 30-minute look-ahead pre-dispatch prices. This sizing model is implemented in `optimisation_models/battery_without_rh_model.py` and can be run using the `battery_without_rh_sizing.ipynb`. 
 
 ### CBS sizing model with coupled receding horizons
-The CBS sizing model with coupled receding horizons simultaneously considers all receding horizons in one optimisation problem. The model is implemented in `optimisation_models/battery_coupled_rh_model.py` and can be run using the `battery_with_rh_sizing.ipynb`.
+The CBS sizing model with coupled receding horizons simultaneously considers all receding horizons in one optimisation problem. The model is implemented in `optimisation_models/battery_coupled_rh_model.py` and can be run using the `battery_coupled_rh_sizing.ipynb`.
