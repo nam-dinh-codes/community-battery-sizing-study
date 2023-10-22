@@ -152,5 +152,5 @@ class BatteryRho():
         # If folder does not exist, create it
         if not os.path.exists(folder_name):
             os.makedirs(folder_name)
-        capacity = int(self.df_battery_optimised['capacity'].iloc[0])
+        capacity = int(round(self.df_battery_optimised['capacity'].iloc[0], 0))
         self.df_battery_optimised.to_csv(f'{folder_name}/battery_{capacity}_rho_model.csv')
