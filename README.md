@@ -16,7 +16,8 @@ The CBS operation model is implemented in the `optimisation_models/battery_rho_m
 <p align="center">
 <img src="data/figures/cbs_rho.jpg" alt="Battery RHO flowchart" width="500">
 </p>
-The global optimal battery capacity can be found by exhaustively searching for the capacity that minimises the ground truth cost. Examples are provided in the `battery_cost_calculation.ipynb` file.
+
+The global optimal battery capacity can be found by exhaustively searching for the capacity that minimises the ground truth cost. Examples are provided in the  `battery_cost_calculation.ipynb` file.
 
 ### CBS sizing model without receding horizon
 A common battery sizing approach is to assume a perfect prediction of uncertain parameters and solve a planning problem over the entire sizing horizon. Additionally, to explore the impact of forecast prices, we replace the actual prices with 30-minute look-ahead pre-dispatch prices. This sizing model is implemented in `optimisation_models/battery_without_rh_model.py` and can be run using the `battery_without_rh_sizing.ipynb`. 
