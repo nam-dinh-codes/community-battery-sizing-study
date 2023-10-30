@@ -1,12 +1,12 @@
 # Community Battery Sizing Study Considering Receding Horizon Operation
 
 ## Introduction
-This is the repository for a community battery storage (CBS) sizing study that considers receding horizon operation (RHO). A key part of this study is to develop an accurate CBS operation model that continuously adjusts to changes in power system forecasts. The uncertainties include wholesale spot prices and residential users' consumption. While the forecasts of spot prices can be obtained from the pre-dispatch prices published by AEMO, the forecasts of residential users' consumption are not available. Therefore, the study first considers a price-responsive behaviour model of residential electricity users to obtain the dynamic consumption forecasts. The study then uses the price and consumption forecasts to determine the optimal CBS operation plan in a receding horizon manner. There exists different battery sizing studies in the literature, however, most of them do not consider the RHO operation. The study aims to compare the CBS sizing results with and without RHO.
+This is the repository for a community battery storage (CBS) sizing study that considers receding horizon operation (RHO). A key part of this study is to develop an accurate CBS operation model that continuously adjusts to changes in power system forecasts. The uncertainties include wholesale spot prices and residential users' consumption. While the forecasts of spot prices can be obtained from the pre-dispatch prices published by AEMO, the forecasts of residential users' consumption are not available. Therefore, the study first considers a price-responsive behaviour model of residential electricity users to obtain the dynamic consumption forecasts. The study then uses the price and consumption forecasts to determine the optimal CBS operation plan in a receding horizon manner. There exists different battery sizing studies in the literature, however, most of them do not consider the RHO. The study aims to compare the CBS sizing results with and without RHO.
 
 ## Usage
 
-### End-users model
-The end-users model is implemented in the `optimisation_models/prosumer_rho_model.py` file and can be run using the `prosumer_rolling_operation.ipynb` file. The output from the model is the varying consumption behaviour over time.
+### End users model
+The end users model is implemented in the `optimisation_models/prosumer_rho_model.py` file and can be run using the `prosumer_rolling_operation.ipynb` file. The output from the model is the varying consumption behaviour over time.
 <p align="center">
 <img src="data/figures/end_user_rho.jpg" alt="End users RHO flowchart" width="500">
 </p>
@@ -16,7 +16,7 @@ The CBS operation model is implemented in the `optimisation_models/battery_rho_m
 <p align="center">
 <img src="data/figures/cbs_rho.jpg" alt="Battery RHO flowchart" width="500">
 </p>
-The global optimal battery capacity can be found by exhaustively searching for the capacity that minimises the ground truth cost [To be updated]
+The global optimal battery capacity can be found by exhaustively searching for the capacity that minimises the ground truth cost. Examples are provided in the `battery_cost_calculation.ipynb` file.
 
 ### CBS sizing model without receding horizon
 A common battery sizing approach is to assume a perfect prediction of uncertain parameters and solve a planning problem over the entire sizing horizon. Additionally, to explore the impact of forecast prices, we replace the actual prices with 30-minute look-ahead pre-dispatch prices. This sizing model is implemented in `optimisation_models/battery_without_rh_model.py` and can be run using the `battery_without_rh_sizing.ipynb`. 
